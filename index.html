@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Web Agent</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      /* Using system-ui for a clean, native feel */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      width: 100%;
+      height: 100vh;
+      min-width: 250px;
+      /* A slightly wider max-width for better desktop viewing */
+      max-width: 400px;
+      background-color: #1A1A1A; /* Darker overall background */
+      color: #E0E0E0; /* Lighter text color for contrast */
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background-color 0.3s ease; /* Smooth transition for potential theme changes */
+    }
+
+    /* General button styling */
+    button {
+        transition: all 0.2s ease;
+        user-select: none; /* Prevent text selection */
+    }
+    button:hover {
+        filter: brightness(1.2);
+    }
+    button:active {
+        transform: scale(0.98);
+    }
+
+    #header {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px; /* Slightly more padding */
+      background-color: #242424; /* Header background */
+      border-bottom: 1px solid #333333;
+      justify-content: space-between;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+      position: sticky; /* Make header sticky */
+      top: 0;
+      z-index: 10;
+    }
+    #header img {
+      width: 24px;
+      height: 24px;
+      margin-right: 10px;
+    }
+    #header span {
+      font-weight: 600; /* Bolder text */
+      font-size: 1.1em;
+      flex-grow: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #refresh-button, #close-button {
+      background-color: transparent;
+      color: #E0E0E0;
+      border: none;
+      font-size: 1.2em; /* Slightly larger icons */
+      cursor: pointer;
+      padding: 8px; /* More clickable area */
+      border-radius: 5px; /* Slightly rounded */
+    }
+    #refresh-button {
+        margin-right: 5px; /* Space between buttons */
+    }
+
+    #response-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px; /* More padding */
+      background-color: #1A1A1A; /* Match body background */
+      border-bottom: 1px solid #333333;
+      display: flex; /* Enable flex for message alignment */
+      flex-direction: column;
+    }
+    .message-div {
+      margin-bottom: 12px; /* More vertical space */
+      padding: 12px 15px; /* More padding inside bubbles */
+      border-radius: 18px; /* More rounded corners for modern look */
+      max-width: 85%; /* Slightly wider max-width for content */
+      word-wrap: break-word;
+      line-height: 1.5; /* Better readability */
+      font-size: 0.95em;
+    }
+    .message-div strong {
+        font-weight: 600;
+        margin-right: 5px;
+    }
+    .message-div.you {
+      align-self: flex-end;
+      background-color: #4CAF50; /* Primary accent color */
+      color: white;
+      margin-left: auto; /* Push to the right */
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Subtle shadow for depth */
+    }
+    .message-div.ai {
+      align-self: flex-start;
+      background-color: #2E2E2E; /* AI bubble background */
+      color: #E0E0E0;
+      margin-right: auto; /* Push to the left */
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Subtle shadow for depth */
+    }
+
+    #prompt-section {
+      padding: 15px; /* Consistent padding */
+      background-color: #242424; /* Section background */
+      border-bottom: 1px solid #333333;
+      text-align: center;
+      font-size: 0.9em;
+      color: #B0B0B0; /* Slightly desaturated text */
+    }
+
+    #input-area {
+      display: flex;
+      padding: 15px; /* Consistent padding */
+      background-color: #242424; /* Match bottom background */
+      align-items: center;
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.2); /* Shadow for depth */
+      position: sticky; /* Make input sticky */
+      bottom: 0;
+      z-index: 10;
+    }
+    #text-input {
+      flex: 1;
+      height: 45px; /* Slightly taller for better touch target */
+      padding: 10px 15px; /* More horizontal padding */
+      border: 1px solid #333333;
+      border-radius: 25px; /* More rounded, pill-like shape */
+      background-color: #2E2E2E; /* Input background */
+      color: #E0E0E0;
+      margin-right: 10px;
+      box-sizing: border-box;
+      font-size: 1em;
+      outline: none; /* Remove default outline */
+    }
+    #text-input::placeholder {
+      color: #888888;
+    }
+    #text-input:focus {
+        border-color: #4CAF50; /* Highlight on focus */
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.5); /* Green glow */
+    }
+    #send-button {
+      width: 50px; /* Slightly larger button */
+      min-width: 50px;
+      height: 45px; /* Match input height */
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 25px; /* Fully rounded */
+      cursor: pointer;
+      font-size: 1.5em; /* Larger arrow */
+      font-weight: bold;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <span>Fustun : Adjunct product</span>
+    <button id="refresh-button">&#x21BB;</button>
+    <button id="close-button">X</button>
+  </div>
+  <div id="response-area"></div>
+  <div id="prompt-section">
+    Hi! How can fustun help you today?<br/>Enter your prompt:
+  </div>
+  <div id="input-area">
+    <input type="text" id="text-input" placeholder="Enter your prompt...">
+    <button id="send-button">></button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html> 
