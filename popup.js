@@ -49,7 +49,7 @@ sendButton.addEventListener('click', async () => {
       action: 'generateResponse',
       message: message
     });
-    chatState.messages.push({ sender: 'AI', text: response.text });
+    chatState.messages.push({ sender: 'Fustun', text: response.text });
     updateResponseArea();
     // Save updated chat state
     chrome.storage.local.set({ chatState: chatState });

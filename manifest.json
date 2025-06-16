@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Cohere AI Assistant",
+  "name": "Fustun AI Assistant",
   "version": "1.0",
-  "description": "An AI assistant powered by Cohere AI",
+  "description": "An AI assistant powered by Gemini AI with web automation capabilities",
   "permissions": [
     "activeTab",
     "storage",
@@ -22,6 +22,12 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
   "icons": {
     "16": "icons/icon.svg",
     "48": "icons/icon.svg",

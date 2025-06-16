@@ -11,6 +11,50 @@ async function openNewTab(url) {
   });
 }
 
+// Function to ping content script and wait for a response
+async function pingContentScript(tabId) {
+  return new Promise(async (resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Content script not responding"));
+    }, 5000); // 5-second timeout
+
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      clearTimeout(timeout);
+      if (response && response.success === true && response.message === 'pong') {
+        resolve(true);
+      } else {
+        reject(new Error("Unexpected response from content script"));
+      }
+    } catch (error) {
+      clearTimeout(timeout);
+      reject(error);
+    }
+  }); 
+}
+
+// Function to insert text into an input field
+async function insertText(tabId, text, selector = null) {
+  console.log('Insert Text - Text:', text, 'Selector:', selector);
+  try {
+    // Ensure the content script is injected and ready
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['content.js']
+    });
+    await pingContentScript(tabId); // Wait for the content script to be ready
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: 'insertText',
+      text: text,
+      selector: selector
+    });
+    return response;
+  } catch (error) {
+    console.error('Error inserting text:', error);
+    return { success: false, message: error.message };
+  }
+}
+
 // Listen for messages from the chat interface
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generateResponse') {
@@ -21,35 +65,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+function getSystemInstruction() {
+  return `You are an AI assistant with web automation capabilities. Your primary goal is to perform actions on the user's active browser tab based on their requests. You have the following tools:
+
+- **openTab**: Use this tool ONLY IF the user explicitly says "open [website]" or if their request clearly indicates a desire to navigate to a NEW website. If the request implies further actions after opening the tab (e.g., "open youtube and search for lofi songs"), proceed immediately with those actions.
+
+- **insertText**: Use this tool when the user asks you to "type", "enter", "search for", "ask a question on", "interact with", or "provide information to" something. **ABSOLUTELY CRUCIALLY: If the user asks to "ask a question on" or "talk to" another AI (like ChatGPT) via a website, you MUST use this tool to type into that website's input field. YOU ARE NOT TO RESPOND CONVERSATIONALLY ABOUT INABILITY TO INTERACT WITH OTHER AIs DIRECTLY IN SUCH SCENARIOS.** Always assume this action is intended for an input field on the CURRENTLY ACTIVE tab unless the request explicitly involves opening a new website first.
+
+For any other type of request, answer conversationally. Always aim to complete the user's request fully, even if it requires multiple tool calls. If a single user request implies multiple tool calls (e.g., opening a website and then extracting information, or searching and then extracting), proceed with all necessary steps sequentially without waiting for further user input until the entire request is fulfilled.`;
+}
+
 // Main function to handle user messages
 async function handleUserMessage(message) {
-  try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are an AI assistant whose SOLE PURPOSE when a user asks to "open" a website is to use the 'openTab' tool. 
+  const conversationHistory = [
+    {
+      role: 'user',
+      parts: [
+        { text: getSystemInstruction() }
+      ]
+    },
+    { role: 'user', parts: [{ text: message }] }
+  ];
 
-IMPORTANT: Do NOT provide informational answers about websites or ask for clarification. Your ONLY action for website opening requests is to use the 'openTab' tool immediately with the most relevant and official URL.
+  let responseText = '';
+  let maxTurns = 5; // To prevent infinite loops
+  let turn = 0;
 
-Examples:
-- "open youtube" or "open youtube.com" -> USE openTab with url: https://youtube.com
-- "open google" -> USE openTab with url: https://google.com
-- "open google gemini" or "open gemini" -> USE openTab with url: https://gemini.google.com
-- "open amazon" -> USE openTab with url: https://amazon.com
-- "open wikipedia" -> USE openTab with url: https://wikipedia.org
-
-For any other type of request, answer conversationally. The user said: ${message}`
-              }
-            ]
-          }
-        ],
+  while (turn < maxTurns) {
+    turn++;
+    try {
+      const requestBody = JSON.stringify({
+        contents: conversationHistory,
         tools: [
           {
             functionDeclarations: [
@@ -66,45 +112,99 @@ For any other type of request, answer conversationally. The user said: ${message
                   },
                   required: ['url']
                 }
+              },
+              {
+                name: 'insertText',
+                description: 'Inserts text into an input field on the current page',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    text: {
+                      type: 'string',
+                      description: 'The text to insert'
+                    },
+                    selector: {
+                      type: 'string',
+                      description: 'Optional CSS selector for the input field'
+                    }
+                  },
+                  required: ['text']
+                }
               }
             ]
           }
         ]
-      })
-    });
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to get AI response: ${response.status} ${response.statusText}`);
-    }
+      console.log('Request Body sent to Gemini API:', requestBody);
 
-    const data = await response.json();
-    
-    // Check if the response includes a tool call from Gemini
-    if (data.candidates && data.candidates.length > 0 && 
-        data.candidates[0].content && data.candidates[0].content.parts && 
-        data.candidates[0].content.parts.length > 0 && 
-        data.candidates[0].content.parts[0].functionCall) {
-      
-      const functionCall = data.candidates[0].content.parts[0].functionCall;
-      if (functionCall.name === 'openTab') {
-        await openNewTab(functionCall.args.url);
-        return { 
-          text: `I've opened ${functionCall.args.url} for you. What would you like to do there?`,
-          success: true 
-        };
+      const apiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: requestBody
+      });
+
+      if (!apiResponse.ok) {
+        throw new Error(`Failed to get AI response: ${apiResponse.status} ${apiResponse.statusText}`);
       }
-    }
 
-    // If no tool call, return the AI's text response from Gemini
-    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
-      return { text: data.candidates[0].content.parts[0].text.trim() };
-    } else {
-      throw new Error('Invalid Gemini API response format or no text response');
+      const data = await apiResponse.json();
+      const candidate = data.candidates && data.candidates.length > 0 ? data.candidates[0] : null;
+
+      if (candidate && candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+        const part = candidate.content.parts[0];
+
+        if (part.functionCall) {
+          const functionCall = part.functionCall;
+          conversationHistory.push({ role: 'model', parts: [{ functionCall: functionCall }] });
+
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          let toolResultData;
+          let toolOutputContent;
+
+          switch (functionCall.name) {
+            case 'openTab':
+              const tabResult = await openNewTab(functionCall.args.url);
+              toolResultData = { url: functionCall.args.url }; 
+              toolOutputContent = `Successfully opened ${functionCall.args.url}.`;
+              break;
+              
+            case 'insertText':
+              const insertResult = await insertText(tab.id, functionCall.args.text, functionCall.args.selector);
+              if (insertResult.success) {
+                  toolResultData = { insertedText: functionCall.args.text }; 
+                  toolOutputContent = `Inserted text "${functionCall.args.text}".`;
+              } else {
+                  toolResultData = { error: insertResult.message }; 
+                  toolOutputContent = `Failed to insert text: ${insertResult.message}.`;
+              }
+              break;
+
+            default:
+              toolResultData = { error: `Unknown tool: ${functionCall.name}` };
+              toolOutputContent = `Unknown tool: ${functionCall.name}.`;
+              break;
+          }
+          conversationHistory.push({ role: 'user', parts: [{ functionResponse: { name: functionCall.name, response: { result: toolResultData } } }] });
+
+        } else if (part.text) {
+          responseText = part.text.trim();
+          conversationHistory.push({ role: 'model', parts: [{ text: responseText }] });
+          return { text: responseText, success: true };
+        } else {
+          throw new Error('Invalid Gemini API response: no functionCall or text.');
+        }
+      } else {
+        throw new Error('Invalid Gemini API response: no candidates or content.');
+      }
+    } catch (error) {
+      console.error('Error in handleUserMessage loop:', error);
+      return { text: `An error occurred: ${error.message}`, success: false };
     }
-  } catch (error) {
-    console.error('Error:', error);
-    throw error;
   }
+  return { text: responseText || 'I could not complete the request in the given turns.', success: false };
 }
 
 // Handle extension lifecycle events
