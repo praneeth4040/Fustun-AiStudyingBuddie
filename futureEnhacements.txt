@@ -1,0 +1,6 @@
+marco - recordings
+Summarize selected section
+Explain Code
+Multi page extraction
+Translation
+Quick Chart API

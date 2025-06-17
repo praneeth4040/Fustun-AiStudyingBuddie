@@ -109,57 +109,83 @@
       box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Subtle shadow for depth */
     }
 
-    #prompt-section {
-      padding: 15px; /* Consistent padding */
-      background-color: #242424; /* Section background */
-      border-bottom: 1px solid #333333;
-      text-align: center;
-      font-size: 0.9em;
-      color: #B0B0B0; /* Slightly desaturated text */
+    #status-bar {
+      margin: 0;
+      border-radius: 0;
+      border-bottom: 1px solid #333;
+      padding: 10px 18px;
+      background-color: #242424;
+      text-align: left;
+      font-size: 0.95em;
+      color: #B0B0B0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.3s cubic-bezier(.4,0,.2,1), transform 0.3s cubic-bezier(.4,0,.2,1);
     }
-
+    #status-bar.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #status-message {
+      flex: 1;
+      text-align: left;
+    }
+    .stop-btn {
+      background: none;
+      border: none;
+      color: #aaa;
+      font-size: 0.95em;
+      cursor: pointer;
+      margin-left: 16px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.2s;
+      align-self: flex-end;
+    }
+    .stop-btn:hover {
+      background: #333;
+      color: #fff;
+    }
+    /* Loader text styling */
+    .loader-text {
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: #4CAF50;
+    }
     #input-area {
       display: flex;
-      padding: 15px; /* Consistent padding */
-      background-color: #242424; /* Match bottom background */
       align-items: center;
-      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.2); /* Shadow for depth */
-      position: sticky; /* Make input sticky */
-      bottom: 0;
-      z-index: 10;
+      background: #242424;
+      padding: 10px;
+      border-radius: 0 0 16px 16px;
+      margin: 0;
     }
     #text-input {
       flex: 1;
-      height: 45px; /* Slightly taller for better touch target */
-      padding: 10px 15px; /* More horizontal padding */
+      height: 34px;
+      padding: 6px 12px;
       border: 1px solid #333333;
-      border-radius: 25px; /* More rounded, pill-like shape */
-      background-color: #2E2E2E; /* Input background */
+      border-radius: 18px;
+      background-color: #2E2E2E;
       color: #E0E0E0;
       margin-right: 10px;
-      box-sizing: border-box;
       font-size: 1em;
-      outline: none; /* Remove default outline */
-    }
-    #text-input::placeholder {
-      color: #888888;
-    }
-    #text-input:focus {
-        border-color: #4CAF50; /* Highlight on focus */
-        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.5); /* Green glow */
+      outline: none;
     }
     #send-button {
-      width: 50px; /* Slightly larger button */
-      min-width: 50px;
-      height: 45px; /* Match input height */
+      width: 40px;
+      height: 34px;
       background-color: #4CAF50;
       color: white;
       border: none;
-      border-radius: 25px; /* Fully rounded */
+      border-radius: 18px;
       cursor: pointer;
-      font-size: 1.5em; /* Larger arrow */
+      font-size: 1.3em;
       font-weight: bold;
-      flex-shrink: 0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -173,9 +199,7 @@
     <button id="close-button">X</button>
   </div>
   <div id="response-area"></div>
-  <div id="prompt-section">
-    Hi! How can fustun help you today?<br/>Enter your prompt:
-  </div>
+  <div id="status-bar" class="status-bar" style="display:none;"></div>
   <div id="input-area">
     <input type="text" id="text-input" placeholder="Enter your prompt...">
     <button id="send-button">></button>

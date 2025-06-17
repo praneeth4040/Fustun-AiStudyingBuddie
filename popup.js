@@ -14,6 +14,7 @@ const textInput = document.getElementById('text-input');
 const sendButton = document.getElementById('send-button');
 const closeButton = document.getElementById('close-button');
 const refreshButton = document.getElementById('refresh-button');
+const statusBar = document.getElementById('status-bar');
 
 // Handle close button click
 closeButton.addEventListener('click', () => {
@@ -29,8 +30,43 @@ refreshButton.addEventListener('click', () => {
   });
 });
 
+let stopped = false;
+let loadingInterval = null;
+const loadingWords = ['Generating...', 'Preparing...', 'Analysing...'];
+let loadingIndex = 0;
+
+function showStatusBar(message, showStop = false) {
+  statusBar.innerHTML = `<span id="status-message" class="loader-text">${message}</span> ${showStop ? '<button id="stop-btn" class="stop-btn">Stop</button>' : ''}`;
+  statusBar.style.display = 'flex';
+  statusBar.classList.add('visible');
+  if (showStop) {
+    document.getElementById('stop-btn').onclick = handleStop;
+  }
+}
+
+function startLoadingAnimation() {
+  loadingIndex = 0;
+  showStatusBar(loadingWords[loadingIndex], true);
+  loadingInterval = setInterval(() => {
+    loadingIndex = (loadingIndex + 1) % loadingWords.length;
+    showStatusBar(loadingWords[loadingIndex], true);
+  }, 900);
+}
+
+function stopLoadingAnimation(finalMessage, showStop = false) {
+  if (loadingInterval) clearInterval(loadingInterval);
+  showStatusBar(finalMessage, showStop);
+}
+
+function handleStop() {
+  stopped = true;
+  stopLoadingAnimation('Process stopped.', false);
+}
+
 // Send message on button click
 sendButton.addEventListener('click', async () => {
+  stopped = false;
+  startLoadingAnimation();
   const message = textInput.value.trim();
   if (!message) return;
 
@@ -53,9 +89,11 @@ sendButton.addEventListener('click', async () => {
     updateResponseArea();
     // Save updated chat state
     chrome.storage.local.set({ chatState: chatState });
+    if (!stopped) stopLoadingAnimation(response.text || 'Failed to summarize content.', false);
   } catch (error) {
     chatState.messages.push({ sender: 'Error', text: error.message });
     updateResponseArea();
+    stopLoadingAnimation(error.message, false);
   } finally {
     sendButton.disabled = false;
     sendButton.textContent = '>';
@@ -71,4 +109,9 @@ function updateResponseArea() {
     responseArea.appendChild(messageDiv);
   });
   responseArea.scrollTop = responseArea.scrollHeight; // Scroll to bottom
+}
+
+function hideStatusBar() {
+  statusBar.classList.remove('visible');
+  setTimeout(() => { statusBar.style.display = 'none'; }, 300);
 } 

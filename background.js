@@ -5,6 +5,10 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 // Function to open a new tab
 async function openNewTab(url) {
   return new Promise((resolve) => {
+    // Prepend https:// if the URL doesn't have a protocol
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
     chrome.tabs.create({ url }, (tab) => {
       resolve({ success: true, tabId: tab.id });
     });
@@ -48,6 +52,9 @@ async function insertText(tabId, text, selector = null) {
       text: text,
       selector: selector
     });
+    if (response === undefined) {
+      return { success: false, message: 'No response from content script.' };
+    }
     return response;
   } catch (error) {
     console.error('Error inserting text:', error);
@@ -55,12 +62,36 @@ async function insertText(tabId, text, selector = null) {
   }
 }
 
+// Store last summary for chatbot context
+let lastExtractedSummary = '';
+
 // Listen for messages from the chat interface
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generateResponse') {
     handleUserMessage(request.message)
       .then(response => sendResponse(response))
       .catch(error => sendResponse({ error: error.message }));
+    return true;
+  } else if (request.action === 'summarizeContent') {
+    (async () => {
+      try {
+        const prompt = `Summarize the following web page content in a few sentences for context:\n\n${request.content}`;
+        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
+        });
+        const data = await response.json();
+        let summary = '';
+        if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+          summary = data.candidates[0].content.parts[0].text;
+        }
+        lastExtractedSummary = summary;
+        sendResponse({ text: summary });
+      } catch (e) {
+        sendResponse({ text: 'Error summarizing content.' });
+      }
+    })();
     return true;
   }
 });
@@ -70,7 +101,9 @@ function getSystemInstruction() {
 
 - **openTab**: Use this tool ONLY IF the user explicitly says "open [website]" or if their request clearly indicates a desire to navigate to a NEW website. If the request implies further actions after opening the tab (e.g., "open youtube and search for lofi songs"), proceed immediately with those actions.
 
-- **insertText**: Use this tool when the user asks you to "type", "enter", "search for", "ask a question on", "interact with", or "provide information to" something. **ABSOLUTELY CRUCIALLY: If the user asks to "ask a question on" or "talk to" another AI (like ChatGPT) via a website, you MUST use this tool to type into that website's input field. YOU ARE NOT TO RESPOND CONVERSATIONALLY ABOUT INABILITY TO INTERACT WITH OTHER AIs DIRECTLY IN SUCH SCENARIOS.** Always assume this action is intended for an input field on the CURRENTLY ACTIVE tab unless the request explicitly involves opening a new website first.
+- **insertText**: Use this tool when the user asks you to "type", "enter", "search for", "ask a question on", "interact with", or "provide information to" something. If the user does not provide a specific selector (e.g., by saying "into the search bar" or "into #my-input"), you MUST assume they want to insert text into the first suitable input field found on the page. **ABSOLUTELY CRUCIALLY: If the user asks to "ask a question on" or "talk to" another AI (like ChatGPT) via a website, you MUST use this tool to type into that website's input field. YOU ARE NOT TO RESPOND CONVERSATIONALLY ABOUT INABILITY TO INTERACT WITH OTHER AIs DIRECTLY IN SUCH SCENARIOS.** Always assume this action is intended for an input field on the CURRENTLY ACTIVE tab unless the request explicitly involves opening a new website first.
+
+- **summarizePage**: Use this tool when the user asks you to summarize the content of the current web page.
 
 For any other type of request, answer conversationally. Always aim to complete the user's request fully, even if it requires multiple tool calls. If a single user request implies multiple tool calls (e.g., opening a website and then extracting information, or searching and then extracting), proceed with all necessary steps sequentially without waiting for further user input until the entire request is fulfilled.`;
 }
@@ -122,13 +155,18 @@ async function handleUserMessage(message) {
                     text: {
                       type: 'string',
                       description: 'The text to insert'
-                    },
-                    selector: {
-                      type: 'string',
-                      description: 'Optional CSS selector for the input field'
                     }
                   },
                   required: ['text']
+                }
+              },
+              {
+                name: 'summarizePage',
+                description: 'Extracts and summarizes the main content of the current web page',
+                parameters: {
+                  type: 'object',
+                  properties: {},
+                  required: []
                 }
               }
             ]
@@ -163,22 +201,116 @@ async function handleUserMessage(message) {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           let toolResultData;
           let toolOutputContent;
+          let targetTabId = tab.id; // Default to current active tab
 
           switch (functionCall.name) {
             case 'openTab':
               const tabResult = await openNewTab(functionCall.args.url);
               toolResultData = { url: functionCall.args.url }; 
               toolOutputContent = `Successfully opened ${functionCall.args.url}.`;
+              if (tabResult.success && tabResult.tabId) {
+                  targetTabId = tabResult.tabId; // Update targetTabId to the newly opened tab
+              }
               break;
               
             case 'insertText':
-              const insertResult = await insertText(tab.id, functionCall.args.text, functionCall.args.selector);
+              const insertResult = await insertText(targetTabId, functionCall.args.text);
               if (insertResult.success) {
                   toolResultData = { insertedText: functionCall.args.text }; 
                   toolOutputContent = `Inserted text "${functionCall.args.text}".`;
               } else {
                   toolResultData = { error: insertResult.message }; 
                   toolOutputContent = `Failed to insert text: ${insertResult.message}.`;
+              }
+              break;
+
+            case 'summarizePage':
+              try {
+                await chrome.scripting.executeScript({
+                  target: { tabId: targetTabId },
+                  files: ['content.js']
+                });
+                // Use a 1-minute timeout for extraction
+                const extracted = await new Promise((resolve, reject) => {
+                  let isResolved = false;
+                  const timeout = setTimeout(() => {
+                    if (!isResolved) {
+                      isResolved = true;
+                      reject(new Error('Content extraction timed out.'));
+                    }
+                  }, 60000); // 1 minute
+                  chrome.tabs.sendMessage(targetTabId, { action: 'extractContent' }, (response) => {
+                    if (!isResolved) {
+                      isResolved = true;
+                      clearTimeout(timeout);
+                      resolve(response);
+                    }
+                  });
+                });
+                // Log the extracted data for debugging
+                console.log('Extracted content:', extracted && extracted.content ? extracted.content.substring(0, 500) : extracted);
+                if (!extracted || !extracted.content) {
+                  toolResultData = { error: 'Failed to extract content.' };
+                  toolOutputContent = 'Failed to extract content.';
+                  break;
+                }
+                let pageContent = extracted.content;
+                let summary = '';
+                if (pageContent.length > 8000) {
+                  // Chunked summarization
+                  function splitIntoChunks(text, chunkSize = 4000) {
+                    const chunks = [];
+                    for (let i = 0; i < text.length; i += chunkSize) {
+                      chunks.push(text.slice(i, i + chunkSize));
+                    }
+                    return chunks;
+                  }
+                  const chunks = splitIntoChunks(pageContent, 4000);
+                  let chunkSummaries = [];
+                  for (const chunk of chunks) {
+                    const chunkPrompt = `Summarize this part of the web page in detail:\n${chunk}`;
+                    const chunkResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: chunkPrompt }] }] })
+                    });
+                    const chunkData = await chunkResponse.json();
+                    let chunkSummary = '';
+                    if (chunkData.candidates && chunkData.candidates[0] && chunkData.candidates[0].content && chunkData.candidates[0].content.parts && chunkData.candidates[0].content.parts[0].text) {
+                      chunkSummary = chunkData.candidates[0].content.parts[0].text;
+                    }
+                    chunkSummaries.push(chunkSummary);
+                  }
+                  // Final summary of all chunk summaries
+                  const combinedPrompt = `Combine and summarize the following summaries into a detailed, structured summary (bulleted list if possible):\n${chunkSummaries.join('\n')}`;
+                  const finalResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }] })
+                  });
+                  const finalData = await finalResponse.json();
+                  if (finalData.candidates && finalData.candidates[0] && finalData.candidates[0].content && finalData.candidates[0].content.parts && finalData.candidates[0].content.parts[0].text) {
+                    summary = finalData.candidates[0].content.parts[0].text;
+                  }
+                } else {
+                  // Normal summarization
+                  const prompt = `Analyze the following web page content and provide a detailed summary that includes:\n- The main topic and purpose of the page\n- Key sections or headings present\n- Any important data, tables, lists, or links mentioned\n- Who might find this page useful\n- Any unique features, calls to action, or interactive elements\n\nFormat your answer as a bulleted list if possible.\n\nWeb page content:\n${pageContent}`;
+                  const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
+                  });
+                  const data = await response.json();
+                  if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+                    summary = data.candidates[0].content.parts[0].text;
+                  }
+                }
+                lastExtractedSummary = summary;
+                toolResultData = { summary };
+                toolOutputContent = summary;
+              } catch (e) {
+                toolResultData = { error: 'Could not access this page or the content was too large.' };
+                toolOutputContent = 'Could not access this page or the content was too large.';
               }
               break;
 
