@@ -28,42 +28,6 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       }
     }
     sendResponse({ success: true, content });
-  } else if (request.action === 'scrollToBottomAndExtract') {
-    // Scroll to bottom, wait, then extract content
-    (async () => {
-      function scrollToBottom() {
-        return new Promise(resolve => {
-          let totalHeight = 0;
-          let distance = 500;
-          const timer = setInterval(() => {
-            const scrollHeight = document.body.scrollHeight;
-            window.scrollBy(0, distance);
-            totalHeight += distance;
-            if (totalHeight >= scrollHeight - window.innerHeight) {
-              clearInterval(timer);
-              resolve();
-            }
-          }, 200);
-        });
-      }
-      await scrollToBottom();
-      await new Promise(r => setTimeout(r, 2000)); // Wait for lazy content
-      window.scrollTo(0, 0); // Optionally scroll back to top
-      let content = '';
-      const main = document.querySelector('main');
-      if (main) {
-        content = main.innerText;
-      } else {
-        const article = document.querySelector('article');
-        if (article) {
-          content = article.innerText;
-        } else {
-          content = document.body.innerText;
-        }
-      }
-      sendResponse({ success: true, content });
-    })();
-    return true;
   }
   return true;
 });
@@ -201,4 +165,116 @@ async function insertTextIntoInput(text, selector) {
   } catch (error) {
     return { success: false, message: error.message };
   }
-} 
+}
+
+// Tooltip for summarizing selected text
+let summarizeTooltip = null;
+
+function createSummarizeTooltip() {
+  if (summarizeTooltip) return summarizeTooltip;
+  summarizeTooltip = document.createElement('div');
+  summarizeTooltip.id = 'summarize-tooltip';
+  summarizeTooltip.textContent = 'F';
+  summarizeTooltip.style.position = 'absolute';
+  summarizeTooltip.style.background = '#232323';
+  summarizeTooltip.style.color = '#4CAF50';
+  summarizeTooltip.style.width = '36px';
+  summarizeTooltip.style.height = '36px';
+  summarizeTooltip.style.display = 'flex';
+  summarizeTooltip.style.alignItems = 'center';
+  summarizeTooltip.style.justifyContent = 'center';
+  summarizeTooltip.style.fontSize = '1.25em';
+  summarizeTooltip.style.fontWeight = 'bold';
+  summarizeTooltip.style.borderRadius = '50%';
+  summarizeTooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
+  summarizeTooltip.style.cursor = 'pointer';
+  summarizeTooltip.style.zIndex = 999999;
+  summarizeTooltip.style.userSelect = 'none';
+  summarizeTooltip.style.display = 'none';
+  summarizeTooltip.style.transition = 'box-shadow 0.2s, transform 0.3s';
+  summarizeTooltip.style.border = '2px solid #4CAF50';
+  summarizeTooltip.style.outline = 'none';
+  summarizeTooltip.style.padding = '0';
+  summarizeTooltip.style.lineHeight = '36px';
+  summarizeTooltip.style.textAlign = 'center';
+  // Add hover effect for rotation
+  summarizeTooltip.onmouseenter = () => {
+    summarizeTooltip.style.transform = 'rotate(-20deg)';
+  };
+  summarizeTooltip.onmouseleave = () => {
+    summarizeTooltip.style.transform = 'none';
+  };
+  document.body.appendChild(summarizeTooltip);
+  return summarizeTooltip;
+}
+
+function showSummarizeTooltip(x, y) {
+  const tooltip = createSummarizeTooltip();
+  
+  // Ensure tooltip stays within viewport bounds
+  const tooltipWidth = 36;
+  const tooltipHeight = 36;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Calculate position with bounds checking
+  let left = x;
+  let top = y + 10;
+  
+  // Adjust horizontal position if tooltip would go off-screen
+  if (left + tooltipWidth > viewportWidth) {
+    left = viewportWidth - tooltipWidth - 10;
+  }
+  if (left < 10) {
+    left = 10;
+  }
+  
+  // Adjust vertical position if tooltip would go off-screen
+  if (top + tooltipHeight > viewportHeight) {
+    top = y - tooltipHeight - 10;
+  }
+  if (top < 10) {
+    top = 10;
+  }
+  
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+  tooltip.style.display = 'block';
+}
+
+function hideSummarizeTooltip() {
+  if (summarizeTooltip) summarizeTooltip.style.display = 'none';
+}
+
+document.addEventListener('mouseup', (e) => {
+  setTimeout(() => {
+    const selection = window.getSelection();
+    const text = selection && selection.toString().trim();
+    if (text && text.length > 0) {
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      showSummarizeTooltip(rect.left + window.scrollX, rect.bottom + window.scrollY);
+    } else {
+      hideSummarizeTooltip();
+    }
+  }, 10);
+});
+
+document.addEventListener('mousedown', (e) => {
+  if (summarizeTooltip && !summarizeTooltip.contains(e.target)) {
+    hideSummarizeTooltip();
+  }
+});
+
+createSummarizeTooltip();
+summarizeTooltip.onclick = () => {
+  const selection = window.getSelection();
+  const text = selection && selection.toString().trim();
+  if (text && text.length > 0) {
+    try {
+      chrome.runtime.sendMessage({ action: 'openSidePanelWithSelection', text });
+    } catch (e) {
+      alert('Extension context lost. Please reload the page or extension.');
+    }
+    hideSummarizeTooltip();
+  }
+}; 

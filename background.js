@@ -93,6 +93,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     })();
     return true;
+  } else if (request.action === 'openSidePanelWithSelection') {
+    // Log the selected text for debugging
+    console.log('Selected text received from content script:', request.text);
+    // Open the side panel and send the selected text to the popup after a short delay
+    chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(() => {
+      setTimeout(() => {
+        chrome.runtime.sendMessage({ action: 'showSelectionInPopup', text: request.text });
+      }, 500); // Give the panel time to open
+    });
+    return true;
   }
 });
 
@@ -309,6 +319,7 @@ async function handleUserMessage(message) {
                 toolResultData = { summary };
                 toolOutputContent = summary;
               } catch (e) {
+                console.error('Error in summarizePage:', e);
                 toolResultData = { error: 'Could not access this page or the content was too large.' };
                 toolOutputContent = 'Could not access this page or the content was too large.';
               }

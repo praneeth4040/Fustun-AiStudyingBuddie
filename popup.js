@@ -34,6 +34,7 @@ let stopped = false;
 let loadingInterval = null;
 const loadingWords = ['Generating...', 'Preparing...', 'Analysing...'];
 let loadingIndex = 0;
+let loaderRunning = false;
 
 function showStatusBar(message, showStop = false) {
   statusBar.innerHTML = `<span id="status-message" class="loader-text">${message}</span> ${showStop ? '<button id="stop-btn" class="stop-btn">Stop</button>' : ''}`;
@@ -45,6 +46,8 @@ function showStatusBar(message, showStop = false) {
 }
 
 function startLoadingAnimation() {
+  if (loaderRunning) return;
+  loaderRunning = true;
   loadingIndex = 0;
   showStatusBar(loadingWords[loadingIndex], true);
   loadingInterval = setInterval(() => {
@@ -63,12 +66,23 @@ function handleStop() {
   stopLoadingAnimation('Process stopped.', false);
 }
 
+function hideStatusBar() {
+  loaderRunning = false;
+  console.log('Hiding status bar');
+  statusBar.classList.remove('visible');
+  setTimeout(() => { statusBar.style.display = 'none'; }, 300);
+  if (loadingInterval) clearInterval(loadingInterval);
+}
+
 // Send message on button click
 sendButton.addEventListener('click', async () => {
   stopped = false;
-  startLoadingAnimation();
+  startLoadingAnimation(); // Always show loader for AI requests
   const message = textInput.value.trim();
-  if (!message) return;
+  if (!message) {
+    hideStatusBar(); // Hide loader if no message
+    return;
+  }
 
   // Add user message to chat state
   chatState.messages.push({ sender: 'You', text: message });
@@ -89,11 +103,11 @@ sendButton.addEventListener('click', async () => {
     updateResponseArea();
     // Save updated chat state
     chrome.storage.local.set({ chatState: chatState });
-    if (!stopped) stopLoadingAnimation(response.text || 'Failed to summarize content.', false);
+    hideStatusBar(); // Always hide loader after AI response
   } catch (error) {
     chatState.messages.push({ sender: 'Error', text: error.message });
     updateResponseArea();
-    stopLoadingAnimation(error.message, false);
+    hideStatusBar(); // Always hide loader after error
   } finally {
     sendButton.disabled = false;
     sendButton.textContent = '>';
@@ -104,14 +118,50 @@ function updateResponseArea() {
   responseArea.innerHTML = '';
   chatState.messages.forEach(msg => {
     const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message-div', msg.sender === 'You' ? 'you' : 'ai');
-    messageDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
+    if (msg.type === 'selection') {
+      messageDiv.classList.add('message-div', 'selection-block');
+      messageDiv.innerHTML = `<strong>Selected Text:</strong><br><blockquote>${msg.text}</blockquote>`;
+    } else {
+      messageDiv.classList.add('message-div', msg.sender === 'You' ? 'you' : 'ai');
+      messageDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
+    }
     responseArea.appendChild(messageDiv);
   });
-  responseArea.scrollTop = responseArea.scrollHeight; // Scroll to bottom
+  responseArea.scrollTop = responseArea.scrollHeight;
 }
 
-function hideStatusBar() {
-  statusBar.classList.remove('visible');
-  setTimeout(() => { statusBar.style.display = 'none'; }, 300);
+// Listen for selected text from background
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'showSelectionInPopup' && request.text) {
+    addSelectionBlock(request.text);
+    summarizeSelection(request.text);
+  }
+});
+
+function addSelectionBlock(text) {
+  chatState.messages.push({ sender: 'Selection', text, type: 'selection' });
+  updateResponseArea();
+}
+
+async function summarizeSelection(text) {
+  stopped = false;
+  startLoadingAnimation(); // Always show loader for AI requests
+  const prompt = `Summarize the following text in detail:\n\n${text}`;
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'generateResponse', message: prompt });
+    if (response && response.text) {
+      chatState.messages.push({ sender: 'Fustun', text: response.text });
+      updateResponseArea();
+      // Save updated chat state
+      chrome.storage.local.set({ chatState: chatState });
+    } else {
+      chatState.messages.push({ sender: 'Error', text: 'Failed to generate summary.' });
+      updateResponseArea();
+    }
+  } catch (error) {
+    chatState.messages.push({ sender: 'Error', text: error.message || 'Failed to generate summary.' });
+    updateResponseArea();
+  } finally {
+    hideStatusBar(); // Always hide the loader after AI response
+  }
 } 
