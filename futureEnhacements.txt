@@ -1,6 +1,8 @@
-marco - recordings
+marco - recordings (dynamic or parameterized Marco)(Multi Page // Single Page (default)) -- failed to develop by praneeth
 Summarize selected section -- completed on 18/06/25 by praneeth
 Explain Code
 Multi page extraction
 Translation
 Quick Chart API
+writing Assistant
+Auto Filling by storing user data from before 

@@ -42,23 +42,17 @@ function isElementVisible(element) {
          element.offsetHeight > 0;
 }
 
-// Utility function to wait for an element to appear
+// Helper: Wait for element to appear
 function waitForElement(selector, timeout = 5000) {
   return new Promise((resolve) => {
-    const observer = new MutationObserver((mutations, obs) => {
-      const element = document.querySelector(selector);
-      if (element) {
-        obs.disconnect();
-        resolve(element);
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
+    const start = Date.now();
+    function check() {
+      const el = document.querySelector(selector);
+      if (el) return resolve(el);
+      if (Date.now() - start > timeout) return resolve(null);
+      setTimeout(check, 100);
+    }
+    check();
   });
 }
 
