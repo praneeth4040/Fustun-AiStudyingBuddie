@@ -184,15 +184,15 @@ sequenceDiagram
   participant CT as Content Script (content/index.js)
 
   U->>UI: Type prompt and click Send
-  UI->>BG: chrome.runtime.sendMessage { action: generateResponse, message }
-  BG->>GM: POST contents + functionDeclarations
+  UI->>BG: sendMessage(generateResponse)
+  BG->>GM: POST contents + tool declarations
   GM-->>BG: candidate with text or functionCall
   alt functionCall == openTab
     BG->>BG: openNewTab(url)
   else functionCall == insertText
-    BG->>CT: Inject script (chrome.scripting)
+    BG->>CT: Inject content script
     BG->>CT: ping (ensure ready)
-    BG->>CT: insertText { text, selector? }
+    BG->>CT: insertText(text)
     CT->>CT: Fill input, try clickSearchButton / Enter
     CT-->>BG: { success, message }
   else functionCall == summarizePage
@@ -208,7 +208,7 @@ sequenceDiagram
       GM-->>BG: summary
     end
   end
-  BG-->>UI: { text }
+  BG-->>UI: response text
   UI->>UI: Render AI message, persist chatState
 ```
 
@@ -239,34 +239,34 @@ sequenceDiagram
 ### Flow – Page summarization (summarizePage)
 ```mermaid
 flowchart TD
-  A[Invoke summarizePage] --> B[Inject content script]
-  B --> C[extractContent -> text]
+  A[Summarize page] --> B[Inject content script]
+  B --> C[Extract main text]
   C -->|No content| E[Return error]
-  C -->|Has content| D{Content length > 8000?}
-  D -->|Yes| F[Split into 4000-char chunks]
-  F --> G[Summarize each chunk concisely]
-  G --> H[Combine chunk summaries into concise bullet list]
-  D -->|No| I[Summarize content into 5–8 concise bullets]
-  H --> J[Return summary to conversation]
+  C -->|Has content| D{Content length > 8000}
+  D -->|Yes| F[Split into 4000 char chunks]
+  F --> G[Summarize each chunk]
+  G --> H[Combine chunk summaries into concise bullets]
+  D -->|No| I[Summarize into 5-8 concise bullets]
+  H --> J[Return summary]
   I --> J
 ```
 
 ### Flow – Insert text and trigger search (insertText)
 ```mermaid
 flowchart TD
-  A[insertText(tabId, text, selector?)] --> B[Inject content script]
-  B --> C[ping content script]
-  C --> D[Content: insertTextIntoInput]
-  D -->|selector provided| E[waitForElement(selector)]
-  D -->|no selector| F[Pick first visible input/textarea]
-  E --> G{Input found?}
+  A[insertText action] --> B[Inject content script]
+  B --> C[Ping content script]
+  C --> D[insertTextIntoInput]
+  D -->|Selector provided| E[Wait for element]
+  D -->|No selector| F[Pick first visible input or textarea]
+  E --> G{Input found}
   F --> G
   G -->|No| H[Return error]
-  G -->|Yes| I[Set value, dispatch input/change]
-  I --> J[clickSearchButton]
-  J -->|Found button| K[Click, return success]
-  J -->|No button| L[Press Enter on active input]
-  K --> M[Return result to BG]
+  G -->|Yes| I[Set value and dispatch events]
+  I --> J[Try clickSearchButton]
+  J -->|Found| K[Click and succeed]
+  J -->|Not found| L[Press Enter]
+  K --> M[Return result]
   L --> M
 ```
 
