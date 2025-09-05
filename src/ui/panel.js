@@ -146,7 +146,7 @@ function addSelectionBlock(text) {
 async function summarizeSelection(text) {
   stopped = false;
   startLoadingAnimation(); // Always show loader for AI requests
-  const prompt = `Summarize the following text in detail:\n\n${text}`;
+  const prompt = `Summarize the text concisely in 1-2 sentences. No preamble, no disclaimers, no repetition. Focus on the core idea only.\n\nText:\n${text}`;
   try {
     const response = await chrome.runtime.sendMessage({ action: 'generateResponse', message: prompt });
     if (response && response.text) {
@@ -164,4 +164,6 @@ async function summarizeSelection(text) {
   } finally {
     hideStatusBar(); // Always hide the loader after AI response
   }
-} 
+}
+
+
