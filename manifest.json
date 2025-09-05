@@ -14,7 +14,8 @@
     "<all_urls>"
   ],
   "action": {
-    "default_icon": "icons/icon.svg"
+    "default_icon": "icons/icon.svg",
+    "default_title": "Fustun AI Assistant"
   },
   "side_panel": {
     "default_path": "src/ui/panel.html"

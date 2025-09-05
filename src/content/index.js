@@ -132,35 +132,77 @@ async function insertTextIntoInput(text, selector) {
 // Tooltip for summarizing selected text
 let summarizeTooltip = null;
 
+function applyTooltipTheme(el) {
+  if (!el) return;
+  el.style.background = '#D2B48C'; // biscuit
+  el.style.color = '#FFFFFF'; // white text
+  el.style.fontFamily = "'Kreon', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+  el.style.width = '36px';
+  el.style.height = '36px';
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.style.fontSize = '1.25em';
+  el.style.fontWeight = '700';
+  el.style.borderRadius = '50%';
+  el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
+  el.style.cursor = 'pointer';
+  el.style.zIndex = 999999;
+  el.style.userSelect = 'none';
+  el.style.transition = 'box-shadow 0.2s, transform 0.3s';
+  el.style.border = '2px solid #C8A97A';
+  el.style.outline = 'none';
+  el.style.padding = '0';
+  el.style.lineHeight = '36px';
+  el.style.textAlign = 'center';
+}
+
 function createSummarizeTooltip() {
-  if (summarizeTooltip) return summarizeTooltip;
+  // If an old tooltip exists from a previous content script version, reuse and re-theme it
+  const existing = document.getElementById('summarize-tooltip');
+  if (existing) {
+    summarizeTooltip = existing;
+    applyTooltipTheme(summarizeTooltip);
+    return summarizeTooltip;
+  }
+  if (summarizeTooltip) {
+    applyTooltipTheme(summarizeTooltip);
+    return summarizeTooltip;
+  }
+  try {
+    if (!document.getElementById('fustun-kreon-font')) {
+      const link1 = document.createElement('link');
+      link1.rel = 'preconnect';
+      link1.href = 'https://fonts.googleapis.com';
+      link1.id = 'fustun-kreon-font';
+      const link2 = document.createElement('link');
+      link2.rel = 'preconnect';
+      link2.href = 'https://fonts.gstatic.com';
+      link2.crossOrigin = 'anonymous';
+      const link3 = document.createElement('link');
+      link3.rel = 'stylesheet';
+      link3.href = 'https://fonts.googleapis.com/css2?family=Kreon:wght@300;400;500;600;700&display=swap';
+      document.head.appendChild(link1);
+      document.head.appendChild(link2);
+      document.head.appendChild(link3);
+    }
+  } catch (e) {}
   summarizeTooltip = document.createElement('div');
   summarizeTooltip.id = 'summarize-tooltip';
   summarizeTooltip.textContent = 'F';
   summarizeTooltip.style.position = 'absolute';
-  summarizeTooltip.style.background = '#232323';
-  summarizeTooltip.style.color = '#4CAF50';
-  summarizeTooltip.style.width = '36px';
-  summarizeTooltip.style.height = '36px';
-  summarizeTooltip.style.display = 'flex';
-  summarizeTooltip.style.alignItems = 'center';
-  summarizeTooltip.style.justifyContent = 'center';
-  summarizeTooltip.style.fontSize = '1.25em';
-  summarizeTooltip.style.fontWeight = 'bold';
-  summarizeTooltip.style.borderRadius = '50%';
-  summarizeTooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
-  summarizeTooltip.style.cursor = 'pointer';
-  summarizeTooltip.style.zIndex = 999999;
-  summarizeTooltip.style.userSelect = 'none';
+  applyTooltipTheme(summarizeTooltip);
   summarizeTooltip.style.display = 'none';
-  summarizeTooltip.style.transition = 'box-shadow 0.2s, transform 0.3s';
-  summarizeTooltip.style.border = '2px solid #4CAF50';
-  summarizeTooltip.style.outline = 'none';
-  summarizeTooltip.style.padding = '0';
-  summarizeTooltip.style.lineHeight = '36px';
-  summarizeTooltip.style.textAlign = 'center';
-  summarizeTooltip.onmouseenter = () => { summarizeTooltip.style.transform = 'rotate(-20deg)'; };
-  summarizeTooltip.onmouseleave = () => { summarizeTooltip.style.transform = 'none'; };
+  summarizeTooltip.onmouseenter = () => {
+    summarizeTooltip.style.transform = 'rotate(-20deg)';
+    summarizeTooltip.style.background = '#C8A97A'; // darker biscuit
+    summarizeTooltip.style.borderColor = '#B8936C';
+    summarizeTooltip.style.boxShadow = '0 4px 12px rgba(0,0,0,0.16)';
+  };
+  summarizeTooltip.onmouseleave = () => {
+    summarizeTooltip.style.transform = 'none';
+    applyTooltipTheme(summarizeTooltip);
+  };
   document.body.appendChild(summarizeTooltip);
   return summarizeTooltip;
 }
@@ -180,6 +222,27 @@ function showSummarizeTooltip(x, y) {
 }
 
 function hideSummarizeTooltip() { if (summarizeTooltip) summarizeTooltip.style.display = 'none'; }
+
+function showInlineNotice(message, x, y) {
+  try {
+    const note = document.createElement('div');
+    note.textContent = message;
+    note.style.position = 'absolute';
+    note.style.left = `${(x || 20)}px`;
+    note.style.top = `${(y || 20)}px`;
+    note.style.background = '#FFF8EE';
+    note.style.color = '#5a4b3a';
+    note.style.border = '1px solid #D2B48C';
+    note.style.borderRadius = '8px';
+    note.style.padding = '8px 10px';
+    note.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
+    note.style.fontFamily = "'Kreon', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+    note.style.fontSize = '12px';
+    note.style.zIndex = 1000000;
+    document.body.appendChild(note);
+    setTimeout(() => { if (note && note.parentNode) note.parentNode.removeChild(note); }, 3000);
+  } catch (e) { /* noop */ }
+}
 
 document.addEventListener('mouseup', (e) => {
   setTimeout(() => {
@@ -201,7 +264,13 @@ summarizeTooltip.onclick = () => {
   const selection = window.getSelection();
   const text = selection && selection.toString().trim();
   if (text && text.length > 0) {
-    try { chrome.runtime.sendMessage({ action: 'openSidePanelWithSelection', text }); } catch (e) { alert('Extension context lost. Please reload the page or extension.'); }
+    try {
+      chrome.runtime.sendMessage({ action: 'openSidePanelWithSelection', text });
+    } catch (e) {
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      showInlineNotice('Extension context lost. Reload the page or extension.', rect.left + window.scrollX, rect.bottom + window.scrollY + 12);
+      console.warn('Extension context lost. Please reload the page or extension.');
+    }
     hideSummarizeTooltip();
   }
 };

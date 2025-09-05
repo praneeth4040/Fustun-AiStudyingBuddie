@@ -15,6 +15,7 @@ const sendButton = document.getElementById('send-button');
 const closeButton = document.getElementById('close-button');
 const refreshButton = document.getElementById('refresh-button');
 const statusBar = document.getElementById('status-bar');
+const suggestionsEl = document.getElementById('suggestions');
 
 // Handle close button click
 closeButton.addEventListener('click', () => {
@@ -121,6 +122,36 @@ sendButton.addEventListener('click', async () => {
 
 function updateResponseArea() {
   responseArea.innerHTML = '';
+  // Show suggestions if no chat messages (excluding selection blocks)
+  const nonSelection = chatState.messages.filter(m => m.type !== 'selection');
+  if (nonSelection.length === 0) {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'suggestions';
+    const header = document.createElement('div');
+    header.style.color = '#5a4b3a';
+    header.style.margin = '4px 0';
+    header.style.fontWeight = '600';
+    header.textContent = 'Try one of these:';
+    wrapper.appendChild(header);
+    const chips = [
+      'Give me a 5-bullet summary',
+      "Explain it like I'm five",
+      'Create study notes with headings',
+      'Outline steps I should take next'
+    ];
+    chips.forEach(text => {
+      const chip = document.createElement('span');
+      chip.className = 'suggestion-chip';
+      chip.textContent = text;
+      chip.setAttribute('role', 'button');
+      chip.setAttribute('tabindex', '0');
+      const trigger = () => { textInput.value = text; sendButton.click(); };
+      chip.onclick = trigger;
+      chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trigger(); } };
+      wrapper.appendChild(chip);
+    });
+    responseArea.appendChild(wrapper);
+  }
   chatState.messages.forEach(msg => {
     const messageDiv = document.createElement('div');
     if (msg.type === 'selection') {
@@ -134,6 +165,17 @@ function updateResponseArea() {
   });
   responseArea.scrollTop = responseArea.scrollHeight;
 }
+
+// Enter to send, Shift+Enter newline
+textInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    if (e.shiftKey) {
+      return; // allow newline
+    }
+    e.preventDefault();
+    sendButton.click();
+  }
+});
 
 // Listen for selected text from background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
