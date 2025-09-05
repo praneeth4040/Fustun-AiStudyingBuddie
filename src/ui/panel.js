@@ -93,11 +93,16 @@ sendButton.addEventListener('click', async () => {
   sendButton.disabled = true;
   sendButton.textContent = '...';
 
-  // Send message to background script
+  // Send message to background script (with conversation history)
   try {
+    // Prepare a lightweight recent history (exclude selection blocks)
+    const historyLimit = 12;
+    const filtered = chatState.messages.filter(m => m.type !== 'selection');
+    const recentHistory = filtered.slice(-historyLimit);
     const response = await chrome.runtime.sendMessage({
       action: 'generateResponse',
-      message: message
+      message: message,
+      history: recentHistory
     });
     chatState.messages.push({ sender: 'Fustun', text: response.text });
     updateResponseArea();

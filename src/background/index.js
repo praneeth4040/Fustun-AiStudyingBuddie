@@ -52,7 +52,7 @@ let lastExtractedSummary = '';
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generateResponse') {
-    handleUserMessage(request.message)
+    handleUserMessage(request.message, request.history || [])
       .then(response => sendResponse(response))
       .catch(error => sendResponse({ error: error.message }));
     return true;
@@ -96,11 +96,28 @@ function getSystemInstruction() {
 For any other type of request, answer conversationally. Always aim to complete the user's request fully, even if it requires multiple tool calls.`;
 }
 
-async function handleUserMessage(message) {
-  const conversationHistory = [
-    { role: 'user', parts: [{ text: getSystemInstruction() }] },
-    { role: 'user', parts: [{ text: message }] }
-  ];
+async function handleUserMessage(message, recentHistory) {
+  const conversationHistory = [];
+  // System-style instruction (Gemini v1beta uses role labels; we embed as a user part for guidance)
+  conversationHistory.push({ role: 'user', parts: [{ text: getSystemInstruction() }] });
+
+  // Optional page-context summary to help grounding
+  if (lastExtractedSummary && lastExtractedSummary.trim().length > 0) {
+    conversationHistory.push({ role: 'user', parts: [{ text: `Context summary of current page (if relevant):\n${lastExtractedSummary}` }] });
+  }
+
+  // Map recent chat history into Gemini roles
+  if (Array.isArray(recentHistory)) {
+    for (const msg of recentHistory) {
+      const text = typeof msg.text === 'string' ? msg.text : '';
+      if (!text) continue;
+      const role = msg.sender === 'Fustun' ? 'model' : 'user';
+      conversationHistory.push({ role, parts: [{ text }] });
+    }
+  }
+
+  // Append the new user message
+  conversationHistory.push({ role: 'user', parts: [{ text: message }] });
 
   let responseText = '';
   let maxTurns = 5;
