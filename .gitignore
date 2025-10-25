@@ -1,0 +1,14 @@
+# Node
+node_modules/
+
+# Mac
+.DS_Store
+
+# Env
+.env
+
+# VS Code
+.vscode/
+
+# Build artifacts
+dist/
