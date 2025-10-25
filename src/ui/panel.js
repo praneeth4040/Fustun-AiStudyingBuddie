@@ -212,5 +212,3 @@ async function summarizeSelection(text) {
     hideStatusBar(); // Always hide the loader after AI response
   }
 }
-
-

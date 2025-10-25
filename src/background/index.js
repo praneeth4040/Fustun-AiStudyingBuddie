@@ -1,4 +1,4 @@
-import { GEMINI_API_KEY, GEMINI_API_URL } from '../services/config.js';
+import { GEMINI_API_URL, GEMINI_API_KEY } from '../services/config.js';
 
 // Function to open a new tab
 async function openNewTab(url) {
@@ -60,7 +60,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         const prompt = `Summarize the content concisely in 2-3 sentences. No preamble.\n\n${request.content}`;
-        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+  const apiKey = GEMINI_API_KEY;
+        const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
@@ -126,6 +127,21 @@ async function handleUserMessage(message, recentHistory) {
   while (turn < maxTurns) {
     turn++;
     try {
+      // helper: fetch with timeout (AbortController)
+      async function fetchWithTimeout(resource, options = {}, timeout = 30000) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+          const resp = await fetch(resource, { ...options, signal: controller.signal });
+          clearTimeout(id);
+          return resp;
+        } catch (err) {
+          clearTimeout(id);
+          throw err;
+        }
+      }
+
+      console.debug('handleUserMessage: sending request to Gemini (turn)', turn);
       const requestBody = JSON.stringify({
         contents: conversationHistory,
         tools: [{
@@ -137,7 +153,9 @@ async function handleUserMessage(message, recentHistory) {
         }]
       });
 
-      const apiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody });
+  const apiKey = GEMINI_API_KEY;
+  console.debug('Using API key length:', apiKey ? apiKey.length : 0);
+  const apiResponse = await fetchWithTimeout(`${GEMINI_API_URL}?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody }, 30000);
       if (!apiResponse.ok) throw new Error(`Failed to get AI response: ${apiResponse.status} ${apiResponse.statusText}`);
       const data = await apiResponse.json();
       const candidate = data.candidates && data.candidates.length > 0 ? data.candidates[0] : null;
@@ -177,7 +195,7 @@ async function handleUserMessage(message, recentHistory) {
                   const chunks = splitIntoChunks(pageContent, 4000); let chunkSummaries = [];
                   for (const chunk of chunks) {
                     const chunkPrompt = `Summarize this part concisely in 1-2 sentences. No preamble, no disclaimers. Focus on key points only.\n\nText:\n${chunk}`;
-                    const chunkResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: chunkPrompt }] }] }) });
+                    const chunkResponse = await fetchWithTimeout(`${GEMINI_API_URL}?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: chunkPrompt }] }] }) }, 30000);
                     const chunkData = await chunkResponse.json();
                     let chunkSummary = '';
                     if (chunkData.candidates && chunkData.candidates[0] && chunkData.candidates[0].content && chunkData.candidates[0].content.parts && chunkData.candidates[0].content.parts[0].text) {
@@ -186,12 +204,12 @@ async function handleUserMessage(message, recentHistory) {
                     chunkSummaries.push(chunkSummary);
                   }
                   const combinedPrompt = `Combine the points below into a concise, structured bullet list (5-8 bullets). No preamble, no repetition, no conclusions. Use short, information-dense bullets.\n\n${chunkSummaries.join('\n')}`;
-                  const finalResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }] }) });
+                  const finalResponse = await fetchWithTimeout(`${GEMINI_API_URL}?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }] }) }, 30000);
                   const finalData = await finalResponse.json();
                   if (finalData.candidates && finalData.candidates[0] && finalData.candidates[0].content && finalData.candidates[0].content.parts && finalData.candidates[0].content.parts[0].text) { summary = finalData.candidates[0].content.parts[0].text; }
                 } else {
                   const prompt = `Provide a concise, structured bullet list (5-8 bullets) summarizing the page. No preamble. Focus on: purpose, key sections, notable data or links, who it's for, and any CTAs/features. Keep bullets short and information-dense.\n\nContent:\n${pageContent}`;
-                  const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }) });
+                  const response = await fetchWithTimeout(`${GEMINI_API_URL}?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }) }, 30000);
                   const data = await response.json();
                   if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) { summary = data.candidates[0].content.parts[0].text; }
                 }
