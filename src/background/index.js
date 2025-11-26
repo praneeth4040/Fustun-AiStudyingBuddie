@@ -1,4 +1,5 @@
 import { GEMINI_API_URL, GEMINI_API_KEY } from '../services/config.js';
+import { getChatHistory } from '../database/supabase-bundled.js';
 
 // Function to open a new tab
 async function openNewTab(url) {
@@ -52,7 +53,7 @@ let lastExtractedSummary = '';
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'generateResponse') {
-    handleUserMessage(request.message, request.history || [])
+    handleUserMessage(request.message, request.history || [], request.userId || null)
       .then(response => sendResponse(response))
       .catch(error => sendResponse({ error: error.message }));
     return true;
@@ -97,7 +98,7 @@ function getSystemInstruction() {
 For any other type of request, answer conversationally. Always aim to complete the user's request fully, even if it requires multiple tool calls.`;
 }
 
-async function handleUserMessage(message, recentHistory) {
+async function handleUserMessage(message, recentHistory, userId = null) {
   const conversationHistory = [];
   // System-style instruction (Gemini v1beta uses role labels; we embed as a user part for guidance)
   conversationHistory.push({ role: 'user', parts: [{ text: getSystemInstruction() }] });
@@ -107,7 +108,33 @@ async function handleUserMessage(message, recentHistory) {
     conversationHistory.push({ role: 'user', parts: [{ text: `Context summary of current page (if relevant):\n${lastExtractedSummary}` }] });
   }
 
-  // Map recent chat history into Gemini roles
+  // Fetch chat history from Supabase if userId is provided
+  if (userId) {
+    try {
+      console.log('Fetching chat history from Supabase for user:', userId);
+      const historyResult = await getChatHistory(userId, 20); // Get last 20 messages
+      if (historyResult.success && historyResult.data && Array.isArray(historyResult.data)) {
+        console.log('Supabase history retrieved:', historyResult.data.length, 'messages');
+        // Add Supabase history to conversation
+        for (const record of historyResult.data) {
+          // Add user message
+          if (record.user_message) {
+            conversationHistory.push({ role: 'user', parts: [{ text: record.user_message }] });
+          }
+          // Add AI response
+          if (record.ai_response) {
+            conversationHistory.push({ role: 'model', parts: [{ text: record.ai_response }] });
+          }
+        }
+      } else {
+        console.log('No Supabase history or error:', historyResult.error);
+      }
+    } catch (err) {
+      console.error('Error fetching Supabase history:', err);
+    }
+  }
+
+  // Map recent chat history into Gemini roles (local chat history)
   if (Array.isArray(recentHistory)) {
     for (const msg of recentHistory) {
       const text = typeof msg.text === 'string' ? msg.text : '';

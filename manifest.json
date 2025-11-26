@@ -5,11 +5,20 @@
   "description": "An AI assistant powered by Gemini AI with web automation capabilities",
   "permissions": [
     "activeTab",
+    "identity",
     "storage",
     "tabs",
     "scripting",
     "sidePanel"
   ],
+  "oauth2": {
+  "client_id": "814625779566-rotjontt0j2sbaa9u956qv3orknopsip.apps.googleusercontent.com",
+  "scopes": [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile"
+  ]
+}
+,
   "host_permissions": [
     "<all_urls>"
   ],
