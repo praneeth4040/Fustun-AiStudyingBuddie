@@ -1,0 +1,16 @@
+{
+  "name": "fustun-ai-studying-buddie",
+  "version": "1.0.0",
+  "description": "An AI assistant powered by Gemini AI with web automation capabilities",
+  "main": "src/background/index.js",
+  "scripts": {
+    "build": "esbuild src/database/supabase.js --bundle --outfile=src/database/supabase-bundled.js --platform=browser --external:chrome --format=esm",
+    "dev": "esbuild src/database/supabase.js --bundle --outfile=src/database/supabase-bundled.js --platform=browser --external:chrome --format=esm --watch"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.19.5"
+  }
+}

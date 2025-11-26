@@ -1,11 +1,26 @@
 // Load chat state from storage
+import { supabase, saveChatMessage, getChatHistory, clearChatHistory } from '../database/supabase-bundled.js';
 let chatState = { messages: [] };
+let isGoogleLoginActive = false;
+let isGoogleSignedIn = false;
+let userId = null; // Store user ID for Supabase operations
 
-chrome.storage.local.get(['chatState'], function(result) {
+chrome.storage.local.get(['chatState', 'isGoogleLoginActive', 'isGoogleSignedIn', 'userId'], function(result) {
   if (result.chatState) {
     chatState = result.chatState;
-    updateResponseArea(); // Update UI with loaded history
+    updateResponseArea();
   }
+  if (result.isGoogleLoginActive !== undefined) {
+    isGoogleLoginActive = result.isGoogleLoginActive;
+  }
+  if (result.isGoogleSignedIn !== undefined) {
+    isGoogleSignedIn = result.isGoogleSignedIn;
+  }
+  if (result.userId) {
+    userId = result.userId;
+    console.log('User ID loaded:', userId);
+  }
+  updateViewState();
 });
 
 // Get references to UI elements
@@ -16,6 +31,11 @@ const closeButton = document.getElementById('close-button');
 const refreshButton = document.getElementById('refresh-button');
 const statusBar = document.getElementById('status-bar');
 const suggestionsEl = document.getElementById('suggestions');
+const googleToggleButton = document.getElementById('google-toggle-button');
+const googleLoginSection = document.getElementById('google-login-section');
+const chatbotView = document.getElementById('chatbot-view');
+const googleSigninBtn = document.querySelector('.google-signin-btn');
+const googleLogoutBtn = document.querySelector('.google-logout-btn');
 
 // Handle close button click
 closeButton.addEventListener('click', () => {
@@ -23,13 +43,158 @@ closeButton.addEventListener('click', () => {
 });
 
 // Handle refresh button click
-refreshButton.addEventListener('click', () => {
+refreshButton.addEventListener('click', async () => {
   chatState.messages = []; // Clear current chat messages
   chrome.storage.local.remove(['chatState'], () => {
-    console.log('Chat history cleared from storage.');
+    console.log('Chat history cleared from local storage.');
     updateResponseArea(); // Update UI to show empty chat
   });
+  
+  // Clear Supabase history if user is logged in
+  if (userId && isGoogleSignedIn) {
+    const result = await clearChatHistory(userId);
+    if (result.success) {
+      console.log('Chat history cleared from Supabase');
+    } else {
+      console.error('Failed to clear Supabase history:', result.error);
+    }
+  }
 });
+
+// Handle Google toggle button click
+googleToggleButton.addEventListener('click', () => {
+  isGoogleLoginActive = !isGoogleLoginActive;
+  chrome.storage.local.set({ isGoogleLoginActive });
+  updateViewState();
+});
+
+// Handle Google sign-in button click
+googleSigninBtn.addEventListener('click', async () => {
+  console.log("Initiating Google sign-in...");
+
+  // Use Chrome's identity API for OAuth flow
+  const clientId = '814625779566-rotjontt0j2sbaa9u956qv3orknopsip.apps.googleusercontent.com';
+  const redirectUrl = chrome.identity.getRedirectURL();
+  console.log("Redirect URL:", redirectUrl);
+  
+  // Build OAuth URL with correct scopes
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&response_type=token&scope=openid%20email%20profile&redirect_uri=${encodeURIComponent(redirectUrl)}`;
+
+  chrome.identity.launchWebAuthFlow(
+    { url: authUrl, interactive: true },
+    async (redirectedUrl) => {
+      if (chrome.runtime.lastError) {
+        console.error("Google sign-in failed:", chrome.runtime.lastError.message);
+        alert(`Google login failed: ${chrome.runtime.lastError.message}`);
+        return;
+      }
+
+      if (!redirectedUrl) {
+        console.error("No redirect URL received!");
+        alert("Authentication cancelled or no redirect URL received");
+        return;
+      }
+
+      console.log("Redirected URL:", redirectedUrl);
+
+      // Extract token from redirect URL hash
+      let token = null;
+      try {
+        const urlObj = new URL(redirectedUrl);
+        const hash = urlObj.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        token = params.get('access_token');
+      } catch (e) {
+        console.error("Error parsing redirect URL:", e);
+      }
+
+      if (!token) {
+        console.error("No access token in redirect!");
+        alert("Failed to extract access token from OAuth response");
+        return;
+      }
+
+      console.log("Google OAuth Token received successfully");
+
+      isGoogleSignedIn = true;
+      chrome.storage.local.set({ isGoogleSignedIn, googleToken: token });
+      updateViewState();
+
+      try {
+        // Fetch Google profile
+        const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (!res.ok) {
+          throw new Error(`Google API error: ${res.status}`);
+        }
+        
+        const profile = await res.json();
+        console.log("Google profile:", profile);
+
+        // Save user to Supabase
+        const { data: userData, error: userError } = await supabase
+          .from('fustonusers')
+          .upsert({
+            google_id: profile.id,
+            email: profile.email,
+            name: profile.name,
+            avatar_url: profile.picture
+          }, { onConflict: ['google_id'] })
+          .select();
+
+        if (userError) {
+          console.error('Supabase user save error:', userError.message);
+          alert('Failed to save user data');
+        } else if (userData && userData.length > 0) {
+          console.log('User saved in Supabase:', userData);
+          const userId = userData[0].id;
+          chrome.storage.local.set({ userId });
+        } else {
+          console.log('User data is empty, but no error:', userData);
+          chrome.storage.local.set({ email: profile.email });
+        }
+      } catch (err) {
+        console.error("Error during Google profile fetch or Supabase integration:", err.message);
+        alert(`Error: ${err.message}`);
+      }
+    }
+  );
+
+  console.log("launchWebAuthFlow initiated, waiting for callback...");
+});
+
+
+
+// Handle Google logout button click
+googleLogoutBtn.addEventListener('click', () => {
+  isGoogleSignedIn = false;
+  chrome.storage.local.set({ isGoogleSignedIn });
+  updateViewState();
+});
+
+// Function to update view state based on Google login
+function updateViewState() {
+  if (isGoogleLoginActive) {
+    // Show Google login section, hide chatbot
+    googleLoginSection.classList.add('active');
+    chatbotView.classList.add('hidden');
+    
+    // Show correct button based on sign-in state
+    if (isGoogleSignedIn) {
+      googleSigninBtn.classList.remove('active');
+      googleLogoutBtn.classList.add('active');
+    } else {
+      googleSigninBtn.classList.add('active');
+      googleLogoutBtn.classList.remove('active');
+    }
+  } else {
+    // Show chatbot, hide Google login
+    googleLoginSection.classList.remove('active');
+    chatbotView.classList.remove('hidden');
+  }
+}
 
 let stopped = false;
 let loadingInterval = null;
@@ -103,12 +268,21 @@ sendButton.addEventListener('click', async () => {
     const response = await chrome.runtime.sendMessage({
       action: 'generateResponse',
       message: message,
-      history: recentHistory
+      history: recentHistory,
+      userId: userId // Pass userId for Supabase context retrieval
     });
     chatState.messages.push({ sender: 'Fustun', text: response.text });
     updateResponseArea();
     // Save updated chat state
     chrome.storage.local.set({ chatState: chatState });
+    
+    // Save message to Supabase if user is logged in
+    if (userId && isGoogleSignedIn) {
+      await saveChatMessage(userId, message, response.text, recentHistory);
+    } else {
+      console.log('Not saving to Supabase - user not logged in');
+    }
+    
     hideStatusBar(); // Always hide loader after AI response
   } catch (error) {
     chatState.messages.push({ sender: 'Error', text: error.message });
